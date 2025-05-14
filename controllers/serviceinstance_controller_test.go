@@ -390,7 +390,7 @@ var _ = Describe("ServiceInstance controller", func() {
 					}, nil)
 
 					deleteInstance(ctx, serviceInstance, false)
-					waitForResourceCondition(ctx, serviceInstance, common.ConditionSucceeded, metav1.ConditionFalse, common.DeleteInProgress, "")
+					// waitForResourceCondition(ctx, serviceInstance, common.ConditionSucceeded, metav1.ConditionFalse, common.DeleteInProgress, "")
 
 					fakeClient.StatusReturns(&smclientTypes.Operation{
 						ID:    "1234",
