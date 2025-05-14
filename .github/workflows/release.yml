@@ -1,68 +1,132 @@
-name: Release SAPBTP Operator
+name: Release SAPBTP Operator Fork
+
 on:
   release:
     types: [published]
+
+# Add permissions block
+permissions:
+  contents: write # To upload release assets, tag, etc.
+  packages: write # To push to GHCR
+
 jobs:
   release:
     name: Release SAPBTP Operator
     runs-on: ubuntu-latest
     env:
       TAG_NAME: ${{ github.event.release.tag_name }}
-      CHART_URL: https://github.com/SAP/sap-btp-service-operator/releases/download/${{ github.event.release.tag_name }}/sap-btp-operator-${{ github.event.release.tag_name }}.tgz
+      # Define your GHCR image path
+      # Option 1: ghcr.io/pbochynski/sap-btp-service-operator-controller
+      # Option 2 (closer to original): ghcr.io/pbochynski/sap-btp-service-operator/controller
+      # Let's use Option 2 for consistency with the original structure
+      GHCR_IMAGE_PATH: ghcr.io/${{ github.repository_owner }}/sap-btp-service-operator/controller
+      # Base URL for downloading chart assets from *your* fork's release
+      CHART_RELEASE_URL_BASE: https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}
+      # Name of the chart tgz, assuming it's consistently named
       CHART_TGZ_NAME: sap-btp-operator-${{ github.event.release.tag_name }}.tgz
+
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
-      
+        uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-        
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          repository: sap/sap-btp-service-operator/controller
-          username: ${{ secrets.OPERATOR_USER }}
-          password: ${{ secrets.OPERATOR_PAT }}
-          
-      - name: Build and push
-        uses: docker/build-push-action@v4
+          username: ${{ github.actor }} # Use the GitHub actor (your username)
+          password: ${{ secrets.GITHUB_TOKEN }} # Use the GITHUB_TOKEN
+
+      - name: Build and push controller image
+        uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/sap/sap-btp-service-operator/controller:${{ github.event.release.tag_name }}
+          tags: ${{ env.GHCR_IMAGE_PATH }}:${{ env.TAG_NAME }}
+          # You might also want a 'latest' tag, but be careful with it.
+          # For example, only tag latest if it's not a pre-release:
+          # tags: |
+          #   ${{ env.GHCR_IMAGE_PATH }}:${{ env.TAG_NAME }}
+          #   ${{ !github.event.release.prerelease && format('{0}:latest', env.GHCR_IMAGE_PATH) || '' }}
+
 
       - name: Install kustomize
-        uses: imranismail/setup-kustomize@v1
+        uses: imranismail/setup-kustomize@v1 # Consider updating if newer versions exist or use a different setup action
         with:
           kustomize-version: 3.1.0
 
-      - name: Prepare SAPBTP Operator charts
-        run: make helm-charts
+      - name: Prepare SAPBTP Operator charts (run make target)
+        run: make helm-charts # This assumes `make helm-charts` prepares the chart in a directory like `./sapbtp-operator-charts`
 
       - name: Install helm
-        uses: azure/setup-helm@v1
+        uses: azure/setup-helm@v3 # Using a more recent version of setup-helm
         with:
-          version: v3.4.0
+          version: v3.12.3 # Specify a recent Helm 3 version
 
-      - name: Run chart-releaser
+      - name: Package Helm chart and create index
         run: |
-          sed -i -e 's/tag: master/tag: '${TAG_NAME:-master}'/g' ./sapbtp-operator-charts/values.yaml | sh
-          mkdir out
-          helm package --app-version ${TAG_NAME} --version ${TAG_NAME} -d ./out sapbtp-operator-charts
-          wget https://sap.github.io/sap-btp-service-operator/index.yaml
-          helm repo index ./out --merge index.yaml
-          sed -i "s|${CHART_TGZ_NAME}|${CHART_URL}|g" ./out/index.yaml | sh
-          mv ./hack/kubectl-sapbtp ./out/kubectl-sapbtp
+          echo "Chart source directory: ./sapbtp-operator-charts" # Adjust if 'make helm-charts' outputs elsewhere
+          
+          # IMPORTANT: Update values.yaml to use YOUR GHCR image and the current tag
+          # This sed command is an example. You MUST verify the path and keys in your values.yaml
+          # It needs to change both the image repository and the tag.
+          # Common paths: image.repository, image.tag or controller.image.repository, controller.image.tag etc.
+          # Assuming your values.yaml has something like:
+          # image:
+          #   repository: ghcr.io/sap/sap-btp-service-operator/controller
+          #   tag: master
+          # We need to change it to:
+          # image:
+          #   repository: ghcr.io/pbochynski/sap-btp-service-operator/controller
+          #   tag: <your-tag-name>
+          
+          VALUES_FILE="./sapbtp-operator-charts/values.yaml" # Adjust path if necessary
+          if [ ! -f "$VALUES_FILE" ]; then
+            echo "Error: $VALUES_FILE not found. Check 'make helm-charts' output path."
+            exit 1
+          fi
+          
+          echo "Updating image repository in $VALUES_FILE to ${{ env.GHCR_IMAGE_PATH }}"
+          # This regex tries to find a line like 'repository: ghcr.io/sap/...' and replace it.
+          # Adapt the 'ghcr.io/sap/[^[:space:]]+' part if the original URL is different.
+          sed -i -E "s|repository: *ghcr.io/sap/[^[:space:]]+|repository: ${{ env.GHCR_IMAGE_PATH }}|g" $VALUES_FILE
+          
+          echo "Updating image tag in $VALUES_FILE to ${{ env.TAG_NAME }}"
+          # This regex tries to find 'tag: <something>' and replace <something> with the new tag.
+          sed -i -E "s|tag: *[^[:space:]]+|tag: ${{ env.TAG_NAME }}|g" $VALUES_FILE
 
-      - name: Upload binaries to release
+          # Verify changes (optional, good for debugging)
+          echo "--- Updated $VALUES_FILE ---"
+          cat $VALUES_FILE
+          echo "-----------------------------"
+
+          mkdir -p ./out
+          echo "Packaging Helm chart sapbtp-operator-charts with version ${{ env.TAG_NAME }}"
+          helm package \
+            --app-version ${{ env.TAG_NAME }} \
+            --version ${{ env.TAG_NAME }} \
+            -d ./out \
+            ./sapbtp-operator-charts # Path to your chart source
+
+          echo "Generating Helm repository index in ./out"
+          # The --url should be the base URL where the chart .tgz file will be downloadable from *your* release
+          helm repo index ./out --url ${{ env.CHART_RELEASE_URL_BASE }}
+
+          echo "Copying kubectl-sapbtp plugin if it exists"
+          if [ -f ./hack/kubectl-sapbtp ]; then
+            cp ./hack/kubectl-sapbtp ./out/kubectl-sapbtp
+          else
+            echo "Warning: ./hack/kubectl-sapbtp not found. Skipping copy."
+          fi
+
+      - name: Upload chart and plugin to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: out/*
-          tag: ${{ github.event.release.tag_name }}
+          file: ./out/* # Upload all files from the out directory (chart tgz, index.yaml, plugin)
+          tag: ${{ env.TAG_NAME }}
           overwrite: true
           file_glob: true
-
-

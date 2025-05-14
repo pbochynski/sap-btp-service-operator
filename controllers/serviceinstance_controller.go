@@ -296,16 +296,17 @@ func (r *ServiceInstanceReconciler) deleteInstance(ctx context.Context, serviceI
 		}
 
 		log.Info(fmt.Sprintf("Deleting instance with id %v from SM", serviceInstance.Status.InstanceID))
-		operationURL, deprovisionErr := smClient.Deprovision(serviceInstance.Status.InstanceID, nil, utils.BuildUserInfo(ctx, serviceInstance.Spec.UserInfo))
-		if deprovisionErr != nil {
-			// delete will proceed anyway
-			return utils.HandleDeleteError(ctx, r.Client, deprovisionErr, serviceInstance)
-		}
 
-		if operationURL != "" {
-			log.Info("Deleting instance async")
-			return r.handleAsyncDelete(ctx, serviceInstance, operationURL)
-		}
+		// operationURL, deprovisionErr := smClient.Deprovision(serviceInstance.Status.InstanceID, nil, utils.BuildUserInfo(ctx, serviceInstance.Spec.UserInfo))
+		// if deprovisionErr != nil {
+		// 	// delete will proceed anyway
+		// 	return utils.HandleDeleteError(ctx, r.Client, deprovisionErr, serviceInstance)
+		// }
+
+		// if operationURL != "" {
+		// 	log.Info("Deleting instance async")
+		// 	return r.handleAsyncDelete(ctx, serviceInstance, operationURL)
+		// }
 
 		log.Info("Instance was deleted successfully, removing finalizer")
 		// remove our finalizer from the list and update it.
