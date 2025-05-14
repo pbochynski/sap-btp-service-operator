@@ -4,7 +4,6 @@ on:
   release:
     types: [published]
 
-# Add permissions block
 permissions:
   contents: write # To upload release assets, tag, etc.
   packages: write # To push to GHCR
