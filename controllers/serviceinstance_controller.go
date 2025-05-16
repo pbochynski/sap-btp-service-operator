@@ -296,17 +296,16 @@ func (r *ServiceInstanceReconciler) deleteInstance(ctx context.Context, serviceI
 		}
 
 		log.Info(fmt.Sprintf("Deleting instance with id %v from SM", serviceInstance.Status.InstanceID))
+		operationURL, deprovisionErr := smClient.Deprovision(serviceInstance.Status.InstanceID, nil, utils.BuildUserInfo(ctx, serviceInstance.Spec.UserInfo))
+		if deprovisionErr != nil {
+			// delete will proceed anyway
+			return utils.HandleDeleteError(ctx, r.Client, deprovisionErr, serviceInstance)
+		}
 
-		// operationURL, deprovisionErr := smClient.Deprovision(serviceInstance.Status.InstanceID, nil, utils.BuildUserInfo(ctx, serviceInstance.Spec.UserInfo))
-		// if deprovisionErr != nil {
-		// 	// delete will proceed anyway
-		// 	return utils.HandleDeleteError(ctx, r.Client, deprovisionErr, serviceInstance)
-		// }
-
-		// if operationURL != "" {
-		// 	log.Info("Deleting instance async")
-		// 	return r.handleAsyncDelete(ctx, serviceInstance, operationURL)
-		// }
+		if operationURL != "" {
+			log.Info("Deleting instance async")
+			return r.handleAsyncDelete(ctx, serviceInstance, operationURL)
+		}
 
 		log.Info("Instance was deleted successfully, removing finalizer")
 		// remove our finalizer from the list and update it.
@@ -429,17 +428,17 @@ func (r *ServiceInstanceReconciler) poll(ctx context.Context, serviceInstance *v
 	return ctrl.Result{}, utils.UpdateStatus(ctx, r.Client, serviceInstance)
 }
 
-// func (r *ServiceInstanceReconciler) handleAsyncDelete(ctx context.Context, serviceInstance *v1.ServiceInstance, opURL string) (ctrl.Result, error) {
-// 	serviceInstance.Status.OperationURL = opURL
-// 	serviceInstance.Status.OperationType = smClientTypes.DELETE
-// 	utils.SetInProgressConditions(ctx, smClientTypes.DELETE, "", serviceInstance, false)
+func (r *ServiceInstanceReconciler) handleAsyncDelete(ctx context.Context, serviceInstance *v1.ServiceInstance, opURL string) (ctrl.Result, error) {
+	serviceInstance.Status.OperationURL = opURL
+	serviceInstance.Status.OperationType = smClientTypes.DELETE
+	utils.SetInProgressConditions(ctx, smClientTypes.DELETE, "", serviceInstance, false)
 
-// 	if err := utils.UpdateStatus(ctx, r.Client, serviceInstance); err != nil {
-// 		return ctrl.Result{}, err
-// 	}
+	if err := utils.UpdateStatus(ctx, r.Client, serviceInstance); err != nil {
+		return ctrl.Result{}, err
+	}
 
-// 	return ctrl.Result{Requeue: true, RequeueAfter: r.Config.PollInterval}, nil
-// }
+	return ctrl.Result{Requeue: true, RequeueAfter: r.Config.PollInterval}, nil
+}
 
 func (r *ServiceInstanceReconciler) getInstanceForRecovery(ctx context.Context, smClient sm.Client, serviceInstance *v1.ServiceInstance) (*smClientTypes.ServiceInstance, error) {
 	log := utils.GetLogger(ctx)
