@@ -390,7 +390,7 @@ var _ = Describe("ServiceInstance controller", func() {
 					}, nil)
 
 					deleteInstance(ctx, serviceInstance, false)
-					// waitForResourceCondition(ctx, serviceInstance, common.ConditionSucceeded, metav1.ConditionFalse, common.DeleteInProgress, "")
+					waitForResourceCondition(ctx, serviceInstance, common.ConditionSucceeded, metav1.ConditionFalse, common.DeleteInProgress, "")
 
 					fakeClient.StatusReturns(&smclientTypes.Operation{
 						ID:    "1234",
@@ -689,21 +689,21 @@ var _ = Describe("ServiceInstance controller", func() {
 					errMsg := "failed to delete instance"
 					fakeClient.DeprovisionReturns("", errors.New(errMsg))
 					deleteInstance(ctx, serviceInstance, false)
-					// waitForResourceCondition(ctx, serviceInstance, common.ConditionFailed, metav1.ConditionTrue, common.DeleteFailed, errMsg)
+					waitForResourceCondition(ctx, serviceInstance, common.ConditionFailed, metav1.ConditionTrue, common.DeleteFailed, errMsg)
 				})
 			})
 		})
 
 		Context("Async", func() {
 			BeforeEach(func() {
-				// fakeClient.DeprovisionReturns("/v1/service_instances/id/operations/1234", nil)
-				// fakeClient.StatusReturns(&smclientTypes.Operation{
-				// 	ID:    "1234",
-				// 	Type:  smClientTypes.DELETE,
-				// 	State: smClientTypes.INPROGRESS,
-				// }, nil)
+				fakeClient.DeprovisionReturns("/v1/service_instances/id/operations/1234", nil)
+				fakeClient.StatusReturns(&smclientTypes.Operation{
+					ID:    "1234",
+					Type:  smClientTypes.DELETE,
+					State: smClientTypes.INPROGRESS,
+				}, nil)
 				deleteInstance(ctx, serviceInstance, false)
-				// waitForResourceCondition(ctx, serviceInstance, common.ConditionSucceeded, metav1.ConditionFalse, common.DeleteInProgress, "")
+				waitForResourceCondition(ctx, serviceInstance, common.ConditionSucceeded, metav1.ConditionFalse, common.DeleteInProgress, "")
 			})
 			When("polling ends with success", func() {
 				BeforeEach(func() {
@@ -730,7 +730,7 @@ var _ = Describe("ServiceInstance controller", func() {
 
 				It("should not delete the k8s instance and condition is updated with failure", func() {
 					deleteInstance(ctx, serviceInstance, false)
-					// waitForResourceCondition(ctx, serviceInstance, common.ConditionFailed, metav1.ConditionTrue, common.DeleteFailed, "broker-failure")
+					waitForResourceCondition(ctx, serviceInstance, common.ConditionFailed, metav1.ConditionTrue, common.DeleteFailed, "broker-failure")
 				})
 			})
 		})
@@ -765,7 +765,7 @@ var _ = Describe("ServiceInstance controller", func() {
 					ServiceInstances: []smclientTypes.ServiceInstance{recoveredInstance}}, nil)
 
 				deleteInstance(ctx, serviceInstance, true)
-				// Expect(fakeClient.DeprovisionCallCount()).To(Equal(1))
+				Expect(fakeClient.DeprovisionCallCount()).To(Equal(1))
 			},
 				Entry("last operation is CREATE SUCCEEDED", TestCase{lastOpType: smClientTypes.CREATE, lastOpState: smClientTypes.SUCCEEDED}),
 				Entry("last operation is CREATE FAILED", TestCase{lastOpType: smClientTypes.CREATE, lastOpState: smClientTypes.FAILED}),
