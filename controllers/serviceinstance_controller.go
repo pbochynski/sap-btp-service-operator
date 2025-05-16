@@ -125,10 +125,10 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return utils.MarkAsTransientError(ctx, r.Client, common.Unknown, err, serviceInstance)
 	}
 
-	// RECOVER flag: broaden recovery if set
+	// RECOVER flag: broaden recovery if set (now from label)
 	if serviceInstance.Status.InstanceID == "" {
-		if serviceInstance.Spec.Recover != nil && *serviceInstance.Spec.Recover {
-			log.Info("Recover flag is set, attempting broad recovery from SM")
+		if getBoolLabel(serviceInstance, "services.cloud.sap.com/recover") {
+			log.Info("Recover label is set, attempting broad recovery from SM")
 			smInstance, err := r.getInstanceForRecoveryWithRecover(ctx, smClient, serviceInstance)
 			if err != nil {
 				log.Error(err, "failed to check instance recovery (Recover mode)")
@@ -281,9 +281,9 @@ func (r *ServiceInstanceReconciler) deleteInstance(ctx context.Context, serviceI
 			}
 		}
 
-		// SOFTDELETE flag: skip SM deprovision if set
-		if serviceInstance.Spec.SoftDelete != nil && *serviceInstance.Spec.SoftDelete {
-			log.Info("SoftDelete flag is set, skipping deprovision in Service Manager and removing finalizer only")
+		// SOFTDELETE flag: skip SM deprovision if set (now from label)
+		if getBoolLabel(serviceInstance, "services.cloud.sap.com/soft-delete") {
+			log.Info("SoftDelete label is set, skipping deprovision in Service Manager and removing finalizer only")
 			return ctrl.Result{}, utils.RemoveFinalizer(ctx, r.Client, serviceInstance, common.FinalizerName)
 		}
 
@@ -800,4 +800,10 @@ func (r *ServiceInstanceReconciler) getInstanceForRecoveryWithRecover(ctx contex
 	}
 	log.Info("instance not found in SM (Recover mode)")
 	return nil, nil
+}
+
+// Helper functions to get boolean label values
+func getBoolLabel(obj metav1.Object, key string) bool {
+	val, ok := obj.GetLabels()[key]
+	return ok && (val == "true" || val == "True" || val == "TRUE")
 }

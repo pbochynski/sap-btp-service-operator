@@ -126,12 +126,6 @@ spec:
                   - secretKeyRef
                   type: object
                 type: array
-              recover:
-                default: false
-                description: |-
-                  Indicates that the instance should be created from an existing one in the Service Manager
-                  even if the instance was created in different namespace or cluster
-                type: boolean
               serviceOfferingName:
                 description: The name of the service offering
                 minLength: 1
@@ -146,11 +140,6 @@ spec:
                 type: string
               shared:
                 description: Indicates the desired shared state
-                type: boolean
-              softDelete:
-                default: false
-                description: Service instance should not be deleted from  Service
-                  Manager when the CR is deleted
                 type: boolean
               userInfo:
                 description: |-
