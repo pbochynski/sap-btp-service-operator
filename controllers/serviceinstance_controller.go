@@ -312,6 +312,26 @@ func (r *ServiceInstanceReconciler) deleteInstance(ctx context.Context, serviceI
 			// ongoing delete operation - poll status from SM
 			return r.poll(ctx, serviceInstance)
 		}
+		// if services.cloud.sap.com/cascade-delete is set to true and services.cloud.sap.com/soft-delete is set to false
+		// then unbind all bindings before deleting the instance
+		if getBoolLabel(serviceInstance, "services.cloud.sap.com/cascade-delete") {
+			log.Info("Cascade delete is set, unbinding all bindings for the instance in Service Manager before deprovisioning")
+			bindings, err := smClient.ListBindings(&sm.Parameters{
+				FieldQuery: []string{fmt.Sprintf("service_instance_id eq '%s'", serviceInstance.Status.InstanceID)},
+			})
+			if err != nil {
+				log.Error(err, "failed to list bindings for cascade delete, proceeding with deprovision")
+			} else {
+				for _, binding := range bindings.ServiceBindings {
+					log.Info("Unbinding binding before instance deprovision", "bindingID", binding.ID)
+					_, unbindErr := smClient.Unbind(binding.ID, nil, utils.BuildUserInfo(ctx, serviceInstance.Spec.UserInfo))
+					if unbindErr != nil {
+						log.Error(unbindErr, "failed to unbind binding during cascade delete", "bindingID", binding.ID)
+						// continue unbinding others
+					}
+				}
+			}
+		}
 
 		log.Info(fmt.Sprintf("Deleting instance with id %v from SM", serviceInstance.Status.InstanceID))
 		operationURL, deprovisionErr := smClient.Deprovision(serviceInstance.Status.InstanceID, nil, utils.BuildUserInfo(ctx, serviceInstance.Spec.UserInfo))
