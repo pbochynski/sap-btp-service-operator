@@ -275,6 +275,16 @@ func (in *ServiceInstanceSpec) DeepCopyInto(out *ServiceInstanceSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.Recover != nil {
+		in, out := &in.Recover, &out.Recover
+		*out = new(bool)
+		**out = **in
+	}
+	if in.SoftDelete != nil {
+		in, out := &in.SoftDelete, &out.SoftDelete
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Parameters != nil {
 		in, out := &in.Parameters, &out.Parameters
 		*out = new(runtime.RawExtension)

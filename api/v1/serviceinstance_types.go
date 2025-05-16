@@ -60,6 +60,17 @@ type ServiceInstanceSpec struct {
 	// +optional
 	Shared *bool `json:"shared,omitempty"`
 
+	// Indicates that the instance should be created from an existing one in the Service Manager
+	// even if the instance was created in different namespace or cluster
+	// +optional
+	// +kubebuilder:default=false
+	Recover *bool `json:"recover,omitempty"`
+
+	// Service instance should not be deleted from  Service Manager when the CR is deleted
+	// +optional
+	// +kubebuilder:default=false
+	SoftDelete *bool `json:"softDelete,omitempty"`
+
 	// Provisioning parameters for the instance.
 	//
 	// The Parameters field is NOT secret or secured in any way and should

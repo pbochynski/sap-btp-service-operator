@@ -125,17 +125,29 @@ func (r *ServiceInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return utils.MarkAsTransientError(ctx, r.Client, common.Unknown, err, serviceInstance)
 	}
 
+	// RECOVER flag: broaden recovery if set
 	if serviceInstance.Status.InstanceID == "" {
-		log.Info("Instance ID is empty, checking if instance exist in SM")
-		smInstance, err := r.getInstanceForRecovery(ctx, smClient, serviceInstance)
-		if err != nil {
-			log.Error(err, "failed to check instance recovery")
-			return utils.MarkAsTransientError(ctx, r.Client, common.Unknown, err, serviceInstance)
+		if serviceInstance.Spec.Recover != nil && *serviceInstance.Spec.Recover {
+			log.Info("Recover flag is set, attempting broad recovery from SM")
+			smInstance, err := r.getInstanceForRecoveryWithRecover(ctx, smClient, serviceInstance)
+			if err != nil {
+				log.Error(err, "failed to check instance recovery (Recover mode)")
+				return utils.MarkAsTransientError(ctx, r.Client, common.Unknown, err, serviceInstance)
+			}
+			if smInstance != nil {
+				return r.recover(ctx, smClient, serviceInstance, smInstance)
+			}
+		} else {
+			log.Info("Instance ID is empty, checking if instance exist in SM")
+			smInstance, err := r.getInstanceForRecovery(ctx, smClient, serviceInstance)
+			if err != nil {
+				log.Error(err, "failed to check instance recovery")
+				return utils.MarkAsTransientError(ctx, r.Client, common.Unknown, err, serviceInstance)
+			}
+			if smInstance != nil {
+				return r.recover(ctx, smClient, serviceInstance, smInstance)
+			}
 		}
-		if smInstance != nil {
-			return r.recover(ctx, smClient, serviceInstance, smInstance)
-		}
-
 		// if instance was not recovered then create new instance
 		return r.createInstance(ctx, smClient, serviceInstance)
 	}
@@ -267,6 +279,12 @@ func (r *ServiceInstanceReconciler) deleteInstance(ctx context.Context, serviceI
 					return ctrl.Result{}, err
 				}
 			}
+		}
+
+		// SOFTDELETE flag: skip SM deprovision if set
+		if serviceInstance.Spec.SoftDelete != nil && *serviceInstance.Spec.SoftDelete {
+			log.Info("SoftDelete flag is set, skipping deprovision in Service Manager and removing finalizer only")
+			return ctrl.Result{}, utils.RemoveFinalizer(ctx, r.Client, serviceInstance, common.FinalizerName)
 		}
 
 		smClient, err := r.GetSMClient(ctx, serviceInstance)
@@ -761,4 +779,25 @@ func getErrorMsgFromLastOperation(status *smClientTypes.Operation) string {
 
 type SecretPredicate struct {
 	predicate.Funcs
+}
+
+// getInstanceForRecoveryWithRecover: broader search for Recover flag
+func (r *ServiceInstanceReconciler) getInstanceForRecoveryWithRecover(ctx context.Context, smClient sm.Client, serviceInstance *v1.ServiceInstance) (*smClientTypes.ServiceInstance, error) {
+	log := utils.GetLogger(ctx)
+	parameters := sm.Parameters{
+		FieldQuery: []string{
+			fmt.Sprintf("name eq '%s'", serviceInstance.Spec.ExternalName),
+		},
+		GeneralParams: []string{"attach_last_operations=true"},
+	}
+	instances, err := smClient.ListInstances(&parameters)
+	if err != nil {
+		log.Error(err, "failed to list instances in SM (Recover mode)")
+		return nil, err
+	}
+	if instances != nil && len(instances.ServiceInstances) > 0 {
+		return &instances.ServiceInstances[0], nil
+	}
+	log.Info("instance not found in SM (Recover mode)")
+	return nil, nil
 }
